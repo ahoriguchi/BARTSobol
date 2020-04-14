@@ -1,0 +1,151 @@
+---
+title: "How to use BARTSobol: Sobol' indices vs variable counts"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{my-vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r message=FALSE, warning=FALSE}
+# devtools::install("/Users/akira/Dropbox/Rpkgs/BARTSobol")
+# install.packages("BART")
+```
+
+
+# Overview
+
+This vignette illustrates how to use the BARTSobol package by showcasing the 
+performance difference between 
+the BART-based Sobol' sensitivity indices calculations found in (XX: cite my paper) 
+and variable counts.
+
+
+# Comparison
+
+Here we compare normalized main-effects and total-effects Sobol' sensitivity 
+indices to variable counts of a trained BART model. 
+This BART model is trained on data generated from the Friedman function 
+\[
+f(\mathbf{x}) = \sin(\pi x_1 x_2) + 20(x_3 - 0.5)^2 + 10x_4 + 5x_5
+\]
+applied to the $2^{12}$-Sobol' sequence on the unit hypercube $[0, 1]^p$ 
+where $p = 7$. 
+This BART model uses 200 trees and 1000 posterior samples.
+
+The main-effects and total-effects Sobol' sensitivity indices of the Friedman function are:
+
+- $(S_1, S_2, S_3, S_4, S_5, S_6, S_7) = (.197, .197, .093, .350, .087, 0, 0)$.
+- $(T_1, T_2, T_3, T_4, T_5, T_6, T_7) = (.274, .274, .093, .350, .087, 0, 0)$.
+
+These indices are shown in grey in the plot below.
+
+The main-effects and total-effects Sobol' sensitivity indices of the 
+1,000 posterior samples of the BART model are shown below in black. 
+
+
+```{r setup}
+library(BART)
+library(BARTSobol)
+library(tidyverse)
+```
+
+```{r}
+p <- 7
+n_obs <- 2^12
+n_tree <- 200L
+nd_post <- 1000L
+
+# Create training data
+x_train <- SobolSequence::sobolSequence.points(dimR = p, count = n_obs)
+Fried <- function(x) 10*sin(pi*x[1]*x[2]) + 20*(x[3]-0.5)^2 + 10*x[4] + 5*x[5]
+y_train <- apply(x_train, 1, Fried) + rnorm(n_obs)
+
+# Train BART model; call wbartSobol()
+wb_obj <- wbart(x_train, y_train, ntree = n_tree, ndpost = nd_post, keepevery = 100L, nskip = 1000L)
+wb_sobol <- wbartSobol(wb_obj, p, n_tree, nd_post)
+
+# Plot results
+my_titles <- paste("X", 1:p)
+cntnorm <- apply(wb_obj$varcount, 1, function(x) x/sum(x))  # apply transposes its argument...
+Si <- data.frame(Variable = my_titles, wb_sobol$Si[, -1])
+Ti <- data.frame(Variable = my_titles, wb_sobol$TSi[, -1])
+cntnorm <- data.frame(Variable = my_titles, cntnorm)
+rownames(cntnorm) <- NULL
+# ints <- data.frame(Variable = my_titles, wb_sobol$TSi[, -1] - wb_sobol$Si[, -1])
+
+Si_longer <- as.data.frame(Si) %>%
+  pivot_longer(-Variable, names_to = "colname", values_to = "value") %>%
+  mutate(Metric = "Si") %>% 
+  mutate(Model = "BART")
+Ti_longer <- as.data.frame(Ti) %>%
+  pivot_longer(-Variable, names_to = "colname", values_to = "value") %>%
+  mutate(Metric = "Ti") %>% 
+  mutate(Model = "BART")
+cntnorm_longer <- as.data.frame(cntnorm) %>%
+  pivot_longer(-Variable, names_to = "colname", values_to = "value") %>%
+  mutate(Metric = "Count") %>% 
+  mutate(Model = "BART")
+# ints_longer <- as.data.frame(ints) %>%
+#   pivot_longer(-Variable, names_to = "colname", values_to = "value") %>%
+#   mutate(Metric = "Ti - Si") %>% 
+#   mutate(Model = "BART")
+
+
+# Sobol' index values of the Friedman function 
+Si_f <- c(.197, .197, .093, .350, .087, rep(0, times = p-5))
+Ti_f <- c(.274, .274, .093, .350, .087, rep(0, times = p-5))
+Si_longer <- rbind(Si_longer, 
+                   tibble(Variable = my_titles, colname = "f", 
+                          value = Si_f, Metric = "Si", Model = "f"))
+Ti_longer <- rbind(Ti_longer, 
+                   tibble(Variable = my_titles, colname = "f", 
+                          value = Ti_f, Metric = "Ti", Model = "f"))
+# ints_longer <- rbind(ints_longer,
+#                      tibble(Variable = my_titles, colname = "f", 
+#                             value = Ti_f - Si_f, Metric = "Ti - Si", Model = "f"))
+
+
+
+
+p <- rbind(Si_longer, Ti_longer, cntnorm_longer) %>%
+  ggplot(aes(x = Variable, y = value, shape = Metric, color = Model)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()) +
+  facet_grid(Metric ~ .) + 
+  scale_colour_grey()
+p
+```
+
+
+
+
+
+
+# Citation
+
+XX: Include citations
+
+Cite my paper, Sobol' 1993, and CGM 2010. 
+
+
+
+
+
+
+
+
+
+
+
+
